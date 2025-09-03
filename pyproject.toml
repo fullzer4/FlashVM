@@ -1,0 +1,111 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "flashvm"
+dynamic = ["version"]
+description = "Run Python code inside libkrun microVMs, with an embedded offline OCI image"
+authors = [{ name = "fullzer4", email = "fullzer4@example.com" }]
+keywords = ["python", "vm", "isolation", "libkrun", "krunvm", "oci", "skopeo"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Rust",
+]
+requires-python = ">=3.8"
+license = { text = "MIT" }
+readme = "README.md"
+
+[project.urls]
+Repository = "https://github.com/fullzer4/flashvm"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "pytest-cov>=4.0",
+  "pytest-timeout>=2.1",
+  "pytest-xdist>=3.0",
+  "pytest-benchmark>=4.0",
+  "pytest-asyncio>=0.21",
+  "pytest-mock>=3.10",
+  "hypothesis>=6.75",
+  "maturin>=1.0,<2.0",
+]
+test = [
+  "pytest>=7.0",
+  "pytest-cov>=4.0",
+  "pytest-timeout>=2.1",
+]
+
+[tool.maturin]
+bindings = "pyo3"
+python-source = "."
+module-name = "flashvm._core"
+include = [
+  { path = "flashvm/data/**", format = "wheel" },
+  { path = "flashvm/data/**", format = "sdist" }
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+  "-ra",
+  "--strict-markers",
+  "--strict-config",
+  "--cov=flashvm",
+  "--cov-report=term-missing",
+  "--cov-report=html:reports/coverage/html",
+  "--cov-report=xml:reports/coverage/coverage.xml",
+  "--cov-report=json:reports/coverage/coverage.json",
+  "--dist=worksteal",
+]
+testpaths = ["tests"]
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "integration: marks tests as integration tests",
+  "unit: marks tests as unit tests",
+  "benchmark: marks tests as benchmark tests",
+  "requires_vm: marks tests that require VM capabilities",
+]
+timeout = 300
+filterwarnings = ["error", "ignore::UserWarning", "ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["flashvm"]
+data_file = "reports/coverage/.coverage"
+omit = ["*/tests/*", "*/test_*"]
+
+[tool.coverage.html]
+directory = "reports/coverage/html"
+
+[tool.coverage.xml]
+output = "reports/coverage/coverage.xml"
+
+[tool.coverage.json]
+output = "reports/coverage/coverage.json"
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "def __repr__",
+  "if self.debug:",
+  "if settings.DEBUG",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if 0:",
+  "if __name__ == .__main__.:",
+  "class .*\\bProtocol\\):",
+  "@(abc\\.)?abstractmethod",
+]
+
+[dependency-groups]
+dev = ["pytest-xdist>=3.6.1"]
