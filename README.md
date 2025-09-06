@@ -1,5 +1,10 @@
 # flashVM
 
+[![PyPI](https://img.shields.io/pypi/v/flashvm?label=PyPI)](https://pypi.org/project/flashvm/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/flashvm.svg)](https://pypi.org/project/flashvm/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Downloads](https://static.pepy.tech/badge/flashvm)](https://pepy.tech/project/flashvm)
+
 Run short Python snippets in a microVM for strong isolation—without asking users to pull images or learn container tooling. On first run, flashVM imports an embedded OCI image into local containers-storage, and then boots a microVM via krunvm (libkrun). The result (stdout, exit code, and optional artifacts) is returned to your Python process.
 
 **Under the hood:** krunvm is a CLI for creating microVMs from OCI images using libkrun and buildah; it targets Linux/KVM.  
