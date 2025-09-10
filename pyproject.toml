@@ -61,11 +61,6 @@ addopts = [
   "-ra",
   "--strict-markers",
   "--strict-config",
-  "--cov=flashvm",
-  "--cov-report=term-missing",
-  "--cov-report=html:reports/coverage/html",
-  "--cov-report=xml:reports/coverage/coverage.xml",
-  "--cov-report=json:reports/coverage/coverage.json",
   "--dist=worksteal",
 ]
 testpaths = ["tests"]

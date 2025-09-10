@@ -205,22 +205,45 @@ fn run_with_config(py: Python, code: String, config: &Bound<PyDict>) -> PyResult
 }
 
 #[pyfunction]
-#[pyo3(signature = (image=None))]
-fn prepare_image(py: Python, image: Option<String>) -> PyResult<bool> {
+#[pyo3(signature = (image=None, packages=None, tag=None, index_url=None, extra_index_url=None))]
+fn prepare_image(
+    py: Python,
+    image: Option<String>,
+    packages: Option<Vec<String>>, 
+    tag: Option<String>,
+    index_url: Option<String>,
+    extra_index_url: Option<String>,
+) -> PyResult<bool> {
     let result: Result<bool, InternalVMError> = py.allow_threads(|| {
         let resolver = ImageResolver::new();
-        match image {
-            None => {
+        match (image, packages) {
+            (None, None) => {
+                // Import embedded image (idempotent)
                 resolver.import_embedded_now()?;
                 Ok(true)
             }
-            Some(img) => {
+            (Some(img), None) => {
+                // Validate and pre-pull docker-like refs (keeps behavior)
                 let validated = resolver.resolve_image_ref(Some(&img))?;
                 let is_docker_like = img.starts_with("docker://") || !img.starts_with("oci:");
                 if is_docker_like {
                     let runner = VMRunner::new();
                     runner.pre_pull_image(&validated)?;
                 }
+                Ok(true)
+            }
+            // With packages: layer pip installs on top of base (embedded or provided)
+            (img_opt, Some(pkgs)) => {
+                let base = img_opt.as_deref();
+                // Default tag: overwrite canonical so image=None uses the baked image next runs
+                let target_tag = tag.as_deref().unwrap_or("python-basic");
+                let _new_img = resolver.pip_install_into_image(
+                    base,
+                    &pkgs,
+                    Some(target_tag),
+                    index_url.as_deref(),
+                    extra_index_url.as_deref(),
+                )?;
                 Ok(true)
             }
         }
@@ -230,6 +253,28 @@ fn prepare_image(py: Python, image: Option<String>) -> PyResult<bool> {
         Ok(v) => Ok(v),
         Err(e) => Err(PyVMError::new_err(format!("Error preparing image: {}", e))),
     }
+}
+
+#[pyfunction]
+#[pyo3(signature = (packages, base_image=None, tag=None, index_url=None, extra_index_url=None))]
+fn pip_prepare_image(
+    packages: Vec<String>,
+    base_image: Option<String>,
+    tag: Option<String>,
+    index_url: Option<String>,
+    extra_index_url: Option<String>,
+) -> PyResult<String> {
+    let resolver = ImageResolver::new();
+    let image = resolver
+        .pip_install_into_image(
+            base_image.as_deref(),
+            &packages,
+            tag.as_deref(),
+            index_url.as_deref(),
+            extra_index_url.as_deref(),
+        )
+        .map_err(|e| PyVMError::new_err(format!("pip_prepare_image error: {}", e)))?;
+    Ok(image)
 }
 
 #[pyfunction]
@@ -322,6 +367,7 @@ fn flashvm(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run, m)?)?;
     m.add_function(wrap_pyfunction!(run_with_config, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_image, m)?)?;
+    m.add_function(wrap_pyfunction!(pip_prepare_image, m)?)?;
     m.add_function(wrap_pyfunction!(list_cached_images, m)?)?;
     m.add_function(wrap_pyfunction!(clear_cache, m)?)?;
     m.add_function(wrap_pyfunction!(doctor, m)?)?;

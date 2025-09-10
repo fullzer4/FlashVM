@@ -414,26 +414,20 @@ impl VMRunner {
     ) -> Result<Vec<Artifact>, VMError> {
         let mut artifacts = Vec::new();
         for file_output in expect {
-            let pattern = output_dir.join(&file_output.pattern);
+            // Accept patterns either like "*.csv" or "out/*.csv" (docs show both styles)
+            let mut user_pat = file_output.pattern.clone();
+            if let Some(stripped) = user_pat.strip_prefix("out/") { user_pat = stripped.to_string(); }
+            let pattern = output_dir.join(&user_pat);
             let pattern_str = pattern.to_string_lossy().to_string();
             for entry in glob(&pattern_str).map_err(|e| VMError::Execution(e.msg.to_string()))? {
                 if let Ok(path) = entry {
                     if path.is_file() {
                         let metadata = fs::metadata(&path)?;
                         let size_bytes = metadata.len();
-                        let content = if size_bytes <= max_inline {
-                            Some(fs::read(&path)?)
-                        } else {
-                            None
-                        };
+                        let content = if size_bytes <= max_inline { Some(fs::read(&path)?) } else { None };
                         let guest_rel = path.strip_prefix(output_dir).unwrap_or(&path);
                         let guest_path = format!("out/{}", guest_rel.to_string_lossy());
-                        artifacts.push(Artifact {
-                            guest_path,
-                            host_path: path.clone(),
-                            size_bytes,
-                            content,
-                        });
+                        artifacts.push(Artifact { guest_path, host_path: path.clone(), size_bytes, content });
                     }
                 }
             }

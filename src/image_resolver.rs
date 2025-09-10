@@ -4,7 +4,9 @@ use crate::wheel_resources::WheelResources;
 use anyhow::Result;
 use log::{debug, info, warn};
 use pyo3::Python;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -273,6 +275,100 @@ impl ImageResolver {
     }
     pub fn import_embedded_now(&self) -> Result<(), VMError> {
         self.ensure_embedded_image_imported()
+    }
+
+    fn sh_q(s: &str) -> String {
+        if s.chars().all(|c| c.is_ascii_alphanumeric() || "/-_.:@+=,[]".contains(c)) {
+            s.to_string()
+        } else {
+            let escaped = s.replace('\'', "'\\''");
+            format!("'{}'", escaped)
+        }
+    }
+
+    pub fn pip_install_into_image(
+        &self,
+        base_image: Option<&str>,
+        packages: &[String],
+        tag: Option<&str>,
+        index_url: Option<&str>,
+        extra_index_url: Option<&str>,
+    ) -> Result<String, VMError> {
+        if packages.is_empty() {
+            return Err(VMError::VMConfiguration("packages list cannot be empty".to_string()));
+        }
+
+        // Ensure base image reference
+        let base_ref = match base_image {
+            None => {
+                self.ensure_embedded_image_imported()?;
+                format!("containers-storage:{}", CANONICAL_IMAGE)
+            }
+            Some(img) => {
+                // validate but keep original transport if present
+                let _ = self.validate_image_ref(img)?;
+                img.to_string()
+            }
+        };
+
+        // Create working container
+        let from = self.run_in_buildah_unshare_capture(&format!("buildah from '{}'", base_ref))?;
+        if !from.success {
+            return Err(VMError::Execution(format!("buildah from failed: {}", from.stderr)));
+        }
+        let container = from.stdout.trim().to_string();
+        if container.is_empty() {
+            return Err(VMError::Execution("buildah from returned empty container name".to_string()));
+        }
+
+        // Ensure base image has python and pip available for system install; try best-effort fixes
+        let _ = self.run_in_buildah_unshare(&format!(
+            "buildah run --user root '{}' -- sh -lc {}",
+            container,
+            Self::sh_q(
+                "command -v python3 >/dev/null 2>&1 || true; \
+                 command -v pip3 >/dev/null 2>&1 || python3 -m ensurepip --upgrade >/dev/null 2>&1 || true; \
+                 [ -x /usr/bin/python3 ] || ln -sf $(command -v python3) /usr/bin/python3 || true"
+            )
+        ));
+
+        // Build pip command (force system site-packages, ignore user configs and root warnings)
+        let mut pip_cmd = String::from(
+            "env PIP_CONFIG_FILE=/dev/null PIP_ROOT_USER_ACTION=ignore \
+             python3 -m pip install --no-cache-dir --no-user --disable-pip-version-check --break-system-packages"
+        );
+        if let Some(u) = index_url { pip_cmd.push_str(&format!(" --index-url {}", Self::sh_q(u))); }
+        if let Some(u) = extra_index_url { pip_cmd.push_str(&format!(" --extra-index-url {}", Self::sh_q(u))); }
+        for p in packages { pip_cmd.push(' '); pip_cmd.push_str(&Self::sh_q(p)); }
+
+        // Run as root to install into system site-packages so it's importable by any user
+        let run_ok = self.run_in_buildah_unshare(&format!(
+            "buildah run --user root '{}' -- sh -lc {}",
+            container,
+            Self::sh_q(&pip_cmd)
+        ))?;
+        if !run_ok {
+            let _ = self.run_in_buildah_unshare(&format!("buildah rm '{}'", container));
+            return Err(VMError::Execution("pip install failed inside buildah run".to_string()));
+        }
+
+        // Determine target tag
+        let target_tag = if let Some(t) = tag {
+            t.to_string()
+        } else {
+            let mut hasher = DefaultHasher::new();
+            packages.hash(&mut hasher);
+            let h = hasher.finish();
+            format!("python-pip-{:016x}", h)
+        };
+        let target_name = format!("localhost/flashvm:{}", target_tag);
+
+        let ok_commit = self.run_in_buildah_unshare(&format!("buildah commit '{}' '{}'", container, target_name))?;
+        let _ = self.run_in_buildah_unshare(&format!("buildah rm '{}'", container));
+        if !ok_commit {
+            return Err(VMError::Execution("buildah commit failed".to_string()));
+        }
+        Ok(format!("containers-storage:{}", target_name))
     }
 }
 
