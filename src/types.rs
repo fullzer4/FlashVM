@@ -10,24 +10,45 @@ pub struct ImageHandle {
     #[pyo3(get)] pub rootfs_img: String,
     #[pyo3(get)] pub initrd: Option<String>,
     #[pyo3(get)] pub cache_key: Option<String>,
+    // metadados opcionais
+    #[pyo3(get)] pub base: Option<String>,
+    #[pyo3(get)] pub packages: Option<Vec<String>>,
 }
 
 
 impl ImageHandle {
     pub fn from_pydict<'py>(d: &pyo3::Bound<'py, PyDict>) -> PyResult<Self> {
-        // TODO: validação robusta + normalização de paths
-        Ok(Self {
-            kernel: d
-                .get_item("kernel")?
-                .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("missing kernel"))?
-                .extract()?,
-            rootfs_img: d
-                .get_item("rootfs_img")?
-                .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("missing rootfs_img"))?
-                .extract()?,
-            initrd: d.get_item("initrd")?.map(|v| v.extract()).transpose()?,
-            cache_key: d.get_item("cache_key")?.map(|v| v.extract()).transpose()?,
-        })
+        // metadados opcionais
+    // TODO(meta): considerar validação mais estrita (tipos, normalização de paths)
+        let base: Option<String> = d.get_item("base")?.map(|v| v.extract()).transpose()?;
+        let packages: Option<Vec<String>> = d.get_item("packages")?.map(|v| v.extract()).transpose()?;
+
+        // modo explícito: kernel + rootfs_img presentes
+        let kernel = d.get_item("kernel")?.map(|v| v.extract()).transpose()?;
+        let rootfs_img = d.get_item("rootfs_img")?.map(|v| v.extract()).transpose()?;
+
+        match (kernel, rootfs_img) {
+            (Some(kernel), Some(rootfs_img)) => Ok(Self {
+                kernel,
+                rootfs_img,
+                initrd: d.get_item("initrd")?.map(|v| v.extract()).transpose()?,
+                cache_key: d.get_item("cache_key")?.map(|v| v.extract()).transpose()?,
+                base,
+                packages,
+            }),
+            _ => {
+                // modo embedded sem caminhos explícitos: erro orientando o chamador
+                if matches!(base.as_deref(), Some("embedded")) {
+                    Err(pyo3::exceptions::PyValueError::new_err(
+                        "base='embedded' requer que o chamador Python resolva paths (kernel/rootfs_img) dos assets do pacote e reenvie no meta",
+                    ))
+                } else {
+                    Err(pyo3::exceptions::PyValueError::new_err(
+                        "missing kernel/rootfs_img",
+                    ))
+                }
+            }
+        }
     }
 }
 

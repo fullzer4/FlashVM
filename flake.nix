@@ -1,28 +1,33 @@
 {
-  description = "flashVM";
+  description = "flashvm flake (packages + devShell)";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
 
   outputs = { self, nixpkgs }:
-  let
-    systems = [ "x86_64-linux" "aarch64-linux" ];
-    forAll = nixpkgs.lib.genAttrs systems;
-  in {
-    devShells = forAll (system:
-      let pkgs = import nixpkgs { inherit system; };
-      in {
+    let
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      forAllSystems = f:
+        nixpkgs.lib.genAttrs systems (system:
+          let pkgs = import nixpkgs { inherit system; }; in f pkgs system);
+    in {
+      packages = forAllSystems (pkgs: system: {
+        default = pkgs.callPackage ./package.nix { inherit pkgs; };
+      });
+
+      devShells = forAllSystems (pkgs: system: {
         default = pkgs.mkShell {
-          packages = [
-            pkgs.python312 pkgs.maturin pkgs.uv
-            pkgs.rustc pkgs.cargo pkgs.pkg-config
-            pkgs.docker pkgs.docker-buildx pkgs.gnutar pkgs.coreutils pkgs.jq
-            pkgs.umoci pkgs.skopeo
-            pkgs.erofs-utils pkgs.squashfsTools pkgs.zstd pkgs.lz4
-            pkgs.busybox pkgs.cpio pkgs.e2fsprogs pkgs.cloud-hypervisor
+          buildInputs = [
+            pkgs.rustc
+            pkgs.cargo
+            pkgs.maturin
+            pkgs.python311
+            pkgs.pkg-config
+            pkgs.openssl
           ];
-          shellHook = ''echo ">> flashVM dev shell ativa"'';
+          shellHook = ''
+            export PYO3_PYTHON=${pkgs.python311}/bin/python3
+          '';
         };
-      }
-    );
-  };
+      });
+    };
 }
