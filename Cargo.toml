@@ -1,39 +1,42 @@
 [package]
 name = "flashvm"
-version = "0.1.1"
+version = "0.1.0"
 edition = "2021"
-description = "Run Python code inside libkrun microVMs, with an embedded offline OCI image"
-license = "MIT"
-repository = "https://github.com/fullzer4/flashvm"
-homepage = "https://github.com/fullzer4/flashvm"
-documentation = "https://github.com/fullzer4/flashvm#readme"
-include = [
-    "Cargo.toml",
-    "src/**",
-    "pyproject.toml",
-    "README.md",
-    "flashvm/**",
-    "examples/**",
-    "docker/**",
-]
+license = "Apache-2.0"
+description = "Python-first microVM runner using rust-vmm, for running OCI-prepared Python code in isolated VMs"
+
 
 [lib]
-name = "flashvm"
+name = "flashvm_native"
 crate-type = ["cdylib"]
+
+
+[features]
+x86_64 = ["acpi_tables"]
+aarch64 = ["vm-fdt"]
+
 
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
-tokio = { version = "1.0", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-anyhow = "1.0"
-log = "0.4"
-tempfile = "3.0"
-uuid = { version = "1.0", features = ["v4"] }
-sha256 = "1.0"
-chrono = { version = "0.4", features = ["serde"] }
-glob = "0.3"
+anyhow = "1"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
-[profile.release]
-codegen-units = 1
-lto = "thin"
+
+kvm-ioctls = "*" # TODO: fixar versões
+kvm-bindings = "*"
+vm-memory = { version = "*", features = ["backend-mmap"] }
+linux-loader = "*"
+vm-superio = "*"
+vmm-sys-util = "*"
+
+# These rust-vmm crates are not published to crates.io; use git and keep them optional.
+# They are enabled via the corresponding arch features above.
+acpi_tables = { git = "https://github.com/rust-vmm/acpi_tables", optional = true }
+vm-fdt = { git = "https://github.com/rust-vmm/vm-fdt", optional = true }
+
+# Virtio crates are a workspace; depend on specific crates by git + package name
+virtio-device = { git = "https://github.com/rust-vmm/vm-virtio", package = "virtio-device" }
+virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio", package = "virtio-queue" }
+# virtio-blk = { git = "https://github.com/rust-vmm/vm-virtio", package = "virtio-blk" }
